@@ -1,8 +1,8 @@
 # mmm-conv
 Converts driving license test questions from a proprietary binary format to javascript
 
-MMM Software (www.mmm-software.at) produces a program that allows users to
-practice driving license test questions (these are specific to Austria).
+MMM Software produces a program that allows users to practice
+driving license test questions (these are specific to Austria).
 
 These questions are encoded in a binary format, of which I could decode the most
 important bits.
