@@ -1,37 +1,27 @@
+#include "mmm-conv.h"
+#include "topic.h"
+#include "question.h"
+
+#include <assert.h>
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
 
-#define DEBUG
-
-#ifdef DEBUG
-#define debug(...) fprintf(stderr, "debug:: " __VA_ARGS__)
-#else
-#define debug(...) ;
-#endif
-
-#define error(...) fprintf(stderr, "Error: " __VA_ARGS__), exit(1)
-
-
+const char *progname = "mmm-conv";
 FILE *infile = NULL;
+FILE *outfile = NULL;
 
-void help(const char *progname)
+void help(void)
 {
 	fprintf(stderr, "Usage: %s <topic file> <question file>\n\n", progname);
 	exit(2);
 }
 
-
-void not_enough_mem(void)
+void not_enough_mem(size_t sz, int line)
 {
-	error("out of memory!\n\n");
-}
-
-void close_infile(void)
-{
-	if(infile) fclose(infile);
+	error("out of memory! (last alloc = %zu, line = %d)\n\n", sz, line);
 }
 
 char* readstring(const int byte)
@@ -55,7 +45,7 @@ char* readstring(const int byte)
 	}
 	s = malloc(len+1);
 	if(s == NULL)
-		not_enough_mem();
+		not_enough_mem(len+1, __LINE__);
 
 	if(fread(s, 1, len, infile) != len){
 		free(s);
@@ -70,7 +60,7 @@ char* readstring(const int byte)
 
 void rtrim(char *s)
 {
-	int i, j;
+	int i, j = -1;
 	for(i = 0; s[i] != '\0'; i++){
 		if(s[i] != ' ' && s[i] != '\r' && s[i] != '\n' && s[i] != '\t')
 			j = i;
@@ -128,13 +118,13 @@ const char LOW_UUML[] = "&uuml;";
 const char SZLIG[] = "&szlig;";
 
 
-char* create_escaped_string(const unsigned char *s)
+char* create_escaped_string(const char *s)
 {
 	char *snew, *ptr;
 	size_t len = 0, i;
 
 	for(i = 0; s[i] != '\0'; i++){
-		switch(s[i]){
+		switch(((unsigned char*)s)[i]){
 		case 0xC4: /* &Auml; */
 			len += sizeof(CAP_AUML)-1;
 			break;
@@ -171,11 +161,11 @@ char* create_escaped_string(const unsigned char *s)
 	snew = malloc(len+1);
 
 	if(snew == NULL)
-		not_enough_mem();	
+		not_enough_mem(len+1, __LINE__);	
 
 	ptr = snew;
 	for(i = 0; s[i] != '\0'; i++){
-		switch(s[i]){
+		switch(((unsigned char*)s)[i]){
 		case 0xC4: /* &Auml; */
 			strcpy(ptr, CAP_AUML);
 			ptr += sizeof(CAP_AUML)-1;
@@ -225,103 +215,37 @@ char* create_escaped_string(const unsigned char *s)
 	return snew;
 }
 
-struct Topics{
-	int id;
-	const char *name;
-	struct Topics *next;
-} *topics = NULL;
-
-void topics_add(int id, char *s)
+int parse_question(int *const last_category)
 {
-	struct Topics *d = topics;
-
-	if(topics == NULL){
-		d = topics = malloc( sizeof(struct Topics) );
-	}else{
-		d = topics;
-		while(d->next != NULL)
-			d = d->next;
-
-		d->next = malloc( sizeof(struct Topics) );
-		d = d->next;
-	}
-	if(d == NULL)
-		not_enough_mem();
-
-	d->id = id;
-	d->name = s;
-	d->next = NULL;
-}
-
-void destroy_topicslist(struct Topics *d)
-{
-	if(d == NULL)
-		return;
-	
-	destroy_topicslist(d->next);
-
-	free((void*)d->name);
-	free(d);
-}
-
-const char* get_topic_name(int id)
-{
-	struct Topics *d = topics;
-	while(d != NULL){
-		if(d->id == id)
-			return d->name;
-		
-		d = d->next;
-	}
-	return NULL;
-}
-
-int parse_question(void)
-{
-	static int last_category = 0;
-	unsigned char header[23];
+	struct Question q = { .answer = {0}, .correctness = {0}};
 	int i, a_len;
-	char *question;
 	char answer[256];
+	unsigned char header[23];
 
 	fread(header, 1, 23, infile);
 
 	/* text */
-	question = readstring(2);
-	if(question == NULL)
+	char *qtext = readstring(2);
+	if(qtext == NULL)
 		return 0; /* exit silently */
-	char *esc_question = create_escaped_string(question);
-	if(esc_question == NULL)
+	q.text = create_escaped_string(qtext);
+	if(q.text == NULL)
 		error("esc_question == NULL");
-	free(question);
-
-	printf("<question>\n<text>%s</text>\n", esc_question);
-	free(esc_question);
+	free(qtext);
 
 	/* category */
 	i = header[4] | header[5] | header[6] | header[7];
 	if(i == 0)
-		i = last_category;
+		q.category = *last_category;
 	else
-		i = (header[6] << 8) | header[7];
+		q.category = (header[6] << 8) | header[7];
 
-	const char *topicname = get_topic_name(i);
-	if(topicname == NULL)
-		error("no category with id %d", i);
-	
-	printf("<category>%s</category>\n", topicname);
-	last_category = i;
+	*last_category = i;
 
-	/* number */
-	i = (header[2] << 8) | header[3];
-	printf("<number>%d</number>\n", i);
-
-	/* points */
-	printf("<points>%d</points>\n", header[15]);
-	
-	/* follow-up question */
-	i = (header[10] << 8) | header[11];
-	printf("<followup>%d</followup>\n", i);
+	/* nr, points & follow-up question */
+	q.nr = ((((int) header[2]) << 8) | (int) header[3]);
+	q.points = (int) header[15];
+	q.followup = ((((int) header[10]) << 8) | (int) header[11]);
 
 	/* answers */
 	for(i = 0; i < 4; i++){
@@ -332,33 +256,29 @@ int parse_question(void)
 
 		answer[a_len] = '\0';
 		
-		char *esc_answer = create_escaped_string(answer);
-		if(esc_answer == NULL)
-			error("esc_answer == NULL");
+		q.answer[i] = create_escaped_string(answer);
+		if(q.answer[i] == NULL)
+			error("q.answer == NULL");
 
-		printf("<answer>\n<text>%s</text>\n", esc_answer);
-		printf("<correct>%c</correct>\n</answer>\n", (header[18] & (1 << i)) ? '1' : '0');
-		
-		free(esc_answer);
+		q.correctness[i] = ((int) header[18] & (1 << i));
 	}
 
-	printf("</question>\n\n");
-
+	debug("got question %d\n", q.nr);
 	/* 'magic' dword after each question = 0 */
 	uint32_t nul;
 	fread(&nul, 4, 1, infile);
 	if(nul != 0)
-		debug("nul = %p\n", nul);
+		debug("question not terminated by 0 (terminating number was %u) \n", nul);
+
+	question_add(&q);
 
 	return 1;
 }
 
-
 void parse_questionfile(void)
 {
-	printf("<questionfile>\n");
-	while(!feof(infile) && parse_question());
-	printf("</questionfile>\n");
+	int last_cat = 0;
+	while(!feof(infile) && parse_question(&last_cat));
 }
 
 int readheader_topicfile(void)
@@ -391,7 +311,7 @@ int readheader_topicfile(void)
 
 int parse_topic(void)
 {
-	unsigned char header[6];
+	char header[6];
 	char *name;
 	int id;
 
@@ -405,13 +325,13 @@ int parse_topic(void)
 
 	char *esc_name = create_escaped_string(name);
 	if(esc_name == NULL)
-		not_enough_mem();
+		not_enough_mem(strlen(name), __LINE__);
 
 	debug("\t - %s [%d]\n", esc_name, id);
 
 	free(name);
 
-	topics_add(id, esc_name);
+	topic_add(id, esc_name);
 	return 1;
 }
 
@@ -421,37 +341,77 @@ void parse_topicfile(void)
 	while(!feof(infile) && parse_topic());
 }
 
+void cleanup(void)
+{
+	if(outfile != NULL){
+		fclose(outfile);
+		outfile = NULL;
+	}
+	if(infile != NULL){
+		fclose(infile);
+		infile = NULL;
+	}
+	topic_rdestroy(topics);
+	questionlist_free();
+}
+
+int open_output_file(void)
+{
+	int ok = 1;
+	/* check if exists */
+	outfile = fopen(OUTPUT_FILENAME, "r");
+	if(outfile != NULL){
+		fprintf(stderr, "A file \"" OUTPUT_FILENAME " does already exist\n" 
+			"Continuing would delete this file\n");
+		ok = proceed();
+	}
+	if(!ok) return 0;
+
+	outfile = fopen(OUTPUT_FILENAME, "w");
+	
+	return outfile == NULL ? 0 : 1;
+}
+
 int main(int argc, char **argv)
 {
 	if(argc < 3)
-		help(argv[0]);
+		help();
 
-	atexit(close_infile);
+	progname = argv[0];
+
+	atexit(cleanup);
 	infile = fopen(argv[1], "r");
 
 	if(infile == NULL) 
-		help(argv[0]);
+		help();
 
 	fprintf(stderr, "Reading File '%s'...\n", argv[1]);
 
 	if(readheader_topicfile() == 0 && !proceed())
-		exit(3);
+		return 3;
+
 	parse_topicfile();
 
 	fclose(infile);
 	infile = fopen(argv[2], "r");
 
 	if(infile == NULL) 
-		help(argv[0]);
+		help();
 
 	fprintf(stderr, "Reading File '%s'...\n", argv[2]);
 
 	if(readheader_questionfile() == 0 && !proceed())
-		exit(3);
+		return 3;
 
 	parse_questionfile();
 
-	destroy_topicslist(topics);
+
+	if(!open_output_file())
+		return 2;
+
+	debug("Writing file...\n");
+	questionlist_writejs(outfile);
+	debug("Finished\n");
 
 	return 0;
 }
