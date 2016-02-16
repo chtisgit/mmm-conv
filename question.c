@@ -60,7 +60,7 @@ static void question_writejsobj(FILE *outfile, const struct Question *q)
 		q->followup);
 	
 	for(int i = 0; i < 4; i++){
-		fprintf(outfile, "\t\t{ 'text': %s, 'correct': %s }", 
+		fprintf(outfile, "\t\t{ 'text': '%s', 'correct': %s }",
 			q->answer[i],
 			q->correctness[i] ? "true" : "false");
 		if(i < 3)

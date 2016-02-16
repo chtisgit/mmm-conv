@@ -125,6 +125,10 @@ char* create_escaped_string(const char *s)
 
 	for(i = 0; s[i] != '\0'; i++){
 		switch(((unsigned char*)s)[i]){
+		case '\'':
+			len += 2;
+			break;
+
 		case 0xC4: /* &Auml; */
 			len += sizeof(CAP_AUML)-1;
 			break;
@@ -166,6 +170,11 @@ char* create_escaped_string(const char *s)
 	ptr = snew;
 	for(i = 0; s[i] != '\0'; i++){
 		switch(((unsigned char*)s)[i]){
+		case '\'': /* ' */
+			strcpy(ptr, "\\'");
+			ptr += 2;
+			break;
+
 		case 0xC4: /* &Auml; */
 			strcpy(ptr, CAP_AUML);
 			ptr += sizeof(CAP_AUML)-1;
