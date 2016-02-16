@@ -1,5 +1,7 @@
 <html>
 <head>
+<title>F&uuml;hrerschein</title>
+<link rel="stylesheet" href="style.css">
 </head>
 <body>
 
@@ -7,8 +9,89 @@
 Ihr Browser muss JavaScript unterst&uuml;tzen und es muss aktiviert sein!
 </noscript>
 
+<div id="toolbar">
+Nr: <input id="inp_q_nr" maxlength="4" type="text"></input>
+<button onclick="showSingleQuestion()">Frage anzeigen</button>
+</div>
+<div id="main">
+
+<div id="question_div" style="display: none">
+<table border="1" style="width: 100%">
+<tr><td>Nr: <span id="question_nr"></span></td>
+<td>Punkte: <span id="question_points"></span></td></tr>
+
+<tr><th id="question_text"></th><td id="question_img"></td></tr>
+<tr><td id="answer0_td"><input id="answer0_cb" type="checkbox" value="a0"><span id="answer0_text"></span></td></tr>
+<tr><td id="answer1_td"><input id="answer1_cb" type="checkbox" value="a1"><span id="answer1_text"></span></td></tr>
+<tr><td id="answer2_td"><input id="answer2_cb" type="checkbox" value="a2"><span id="answer2_text"></span></td></tr>
+<tr><td id="answer3_td"><input id="answer3_cb" type="checkbox" value="a3"><span id="answer3_text"></span></td></tr>
+<tr><td><button onclick="markAnswersCurrentQuestion()">Antwort &uuml;berpr&uuml;fen</button></td></tr>
+</table>
+</div>
+
+</div>
+
 <script>
 var questions = [];
+var current_question = -1;
+
+function markAnswersCurrentQuestion(){
+	if(current_question < 0) return;
+	var q = questions[current_question];
+
+	for(i = 0; i < 4; i++){
+		var color;
+		if(q.answer[i].correct)
+			color = "green";
+		else
+			color = "red";
+
+		var td = document.getElementById("answer"+i+"_td");
+		td.style.background = color;
+	}
+}
+
+function resetCheckboxes(){
+	for(i = 0; i < 4; i++){
+		document.getElementById("answer"+i+"_cb").checked = false;
+	}
+}
+
+function resetAnswerBgColor(){
+	for(i = 0; i < 4; i++){
+		document.getElementById("answer"+i+"_td").style.background = "none";
+	}
+}
+
+function showQuestion(q){
+	current_question = q.nr;
+	document.getElementById("question_nr").innerHTML = q.nr;
+	document.getElementById("question_points").innerHTML = q.points;
+	document.getElementById("question_text").innerHTML = q.text;
+	for(i = 0; i < 4; i++){
+		document.getElementById("answer"+i+"_text").innerHTML = q.answer[i].text;
+	}
+	resetAnswerBgColor();
+	resetCheckboxes();
+	document.getElementById("question_div").style.display = "block";
+}
+
+function showSingleQuestion(){
+	var nr_s = document.getElementById("inp_q_nr").value;
+	var nr = parseInt(nr_s);
+	var q = getQuestion(nr);
+	if(!q){
+		alert("Keine Frage mit Nummer '"+nr_s+"'");
+		return;
+	}
+	showQuestion(q);
+}
+
+function getQuestion(N){
+	return questions.find(function(q){ 
+		return q.nr == N;
+	});
+}
 </script>
 
 <!-- questions is initialized here -->
